@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stripe Payment Reconciliation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+    <style>
+        .status-paid { background-color: #d1fae5; }
+        .status-pending { background-color: #fef3c7; }
+        .status-failed { background-color: #fee2e2; }
+        .payout-yes { color: #059669; font-weight: 600; }
+        .payout-no { color: #d97706; font-weight: 600; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h1 class="text-3xl font-bold text-gray-800 mb-2">Stripe Payment Reconciliation</h1>
+            <p class="text-gray-600">Narzędzie do uzgadniania płatności między eventami a Stripe</p>
+        </div>
+
+        <!-- File Upload Section -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">1. Załaduj pliki CSV</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Events Transactions CSV
+                    </label>
+                    <input type="file" id="eventsFile" accept=".csv" 
+                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <p id="eventsStatus" class="mt-2 text-sm text-gray-500"></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        Unified Payments CSV (Stripe)
+                    </label>
+                    <input type="file" id="paymentsFile" accept=".csv" 
+                           class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                    <p id="paymentsStatus" class="mt-2 text-sm text-gray-500"></p>
+                </div>
+            </div>
+            <button id="processBtn" disabled 
+                    class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
+                Przetworz dane
+            </button>
+        </div>
+
+        <!-- Firestore Connection Section -->
+        <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg shadow-md p-6 mb-6 border-2 border-blue-200">
+            <div class="flex items-center mb-4">
+                <svg class="w-6 h-6 text-blue-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                </svg>
+                <h2 class="text-xl font-semibold text-gray-800">Auto-sync z Rowy (Firestore)</h2>
+            </div>
+            <p class="text-sm text-gray-600 mb-4">Połącz się z Firestore aby automatycznie pobierać dane eventów z Rowy. Dane Stripe nadal uplodujesz ręcznie powyżej.</p>
+            <div class="flex flex-wrap items-center gap-4 mb-4">
+                <button id="connectFirestoreBtn" 
+                        class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors">
+                    🔌 Połącz z Firestore
+                </button>
+                <button id="refreshFirestoreBtn" disabled
+                        class="bg-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    🔄 Odśwież dane
+                </button>
+                <div id="firestoreStatus" class="text-sm text-gray-500 flex-1"></div>
+            </div>
+            <div class="flex items-center">
+                <label class="flex items-center cursor-pointer">
+                    <input type="checkbox" id="autoRefreshCheck" class="mr-2 w-4 h-4 text-blue-600">
+                    <span class="text-sm text-gray-600">Auto-refresh co 5 minut</span>
+                </label>
+                <span class="ml-2 text-xs text-gray-400">(zalecane dla ciągłej synchronizacji)</span>
+            </div>
+        </div>
+
+        <!-- Stripe API Connection Section -->
+        <div class="bg-gradient-to-r from-purple-50 to-pink-50 rounded-lg shadow-md p-6 mb-6 border-2 border-purple-200">
+            <div class="flex items-center mb-4">
+                <svg class="w-6 h-6 text-purple-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
+                </svg>
+                <h2 class="text-xl font-semibold text-gray-800">Auto-sync ze Stripe API</h2>
+                <span class="ml-2 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">NOWE!</span>
+            </div>
+            <p class="text-sm text-gray-600 mb-4">Połącz się ze Stripe API aby automatycznie pobierać dane o płatnościach i wypłatach. Wymaga uruchomienia backendu na Vercel.</p>
+            
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">URL API (Vercel)</label>
+                <input type="text" id="stripeApiUrl" 
+                       placeholder="https://twoja-app.vercel.app lub http://localhost:3000"
+                       value=""
+                       class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-purple-500 focus:border-purple-500">
+                <p class="mt-1 text-xs text-gray-500">Zostaw puste aby użyć relatywnego URL (gdy HTML jest na tym samym serwerze)</p>
+            </div>
+            
+            <div class="flex flex-wrap items-center gap-4 mb-4">
+                <button id="connectStripeApiBtn" 
+                        class="bg-purple-600 text-white px-6 py-2 rounded-md hover:bg-purple-700 transition-colors">
+                    💳 Połącz ze Stripe API
+                </button>
+                <button id="refreshStripeApiBtn" disabled
+                        class="bg-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
+                    🔄 Odśwież dane Stripe
+                </button>
+                <select id="stripeDaysRange" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
+                    <option value="30">Ostatnie 30 dni</option>
+                    <option value="60">Ostatnie 60 dni</option>
+                    <option value="90" selected>Ostatnie 90 dni</option>
+                    <option value="180">Ostatnie 180 dni</option>
+                    <option value="365">Ostatni rok</option>
+                </select>
+                <div id="stripeApiStatus" class="text-sm text-gray-500 flex-1"></div>
+            </div>
+            
+            <div class="bg-purple-50 border border-purple-200 rounded-md p-3 text-sm">
+                <p class="font-medium text-purple-800 mb-1">Status połączenia:</p>
+                <p id="stripeConnectionInfo" class="text-purple-600">Niepołączono - wprowadź URL API i kliknij "Połącz"</p>
+            </div>
+        </div>
+
+        <!-- Summary Section -->
+        <div id="summarySection" class="hidden bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">2. Podsumowanie</h2>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div class="bg-blue-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600">Wszystkie transakcje</p>
+                    <p id="totalCount" class="text-2xl font-bold text-blue-600">0</p>
+                </div>
+                <div class="bg-green-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600">Wypłacone</p>
+                    <p id="paidOutCount" class="text-2xl font-bold text-green-600">0</p>
+                </div>
+                <div class="bg-yellow-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600">Oczekujące</p>
+                    <p id="pendingCount" class="text-2xl font-bold text-yellow-600">0</p>
+                </div>
+                <div class="bg-red-50 p-4 rounded-lg">
+                    <p class="text-sm text-gray-600">Nieudane</p>
+                    <p id="failedCount" class="text-2xl font-bold text-red-600">0</p>
+                </div>
+            </div>
+            
+            <!-- Event Financial Summary -->
+            <div id="eventFinancialSection" class="mt-6 hidden">
+                <h3 class="text-lg font-semibold mb-3 flex items-center">
+                    <svg class="w-5 h-5 mr-2 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    Podsumowanie finansowe: <span id="selectedEventName" class="text-blue-600 ml-2"></span>
+                </h3>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
+                    <div class="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
+                        <p class="text-xs text-gray-600 mb-1">✅ Przychód netto</p>
+                        <p id="eventTotalRevenue" class="text-2xl font-bold text-green-700">0 PLN</p>
+                        <p class="text-xs text-gray-500 mt-1"><span id="eventTotalCount">0</span> transakcji</p>
+                        <p class="text-xs text-gray-400 mt-0.5 italic">= przychód - prowizja</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200">
+                        <p class="text-xs text-gray-600 mb-1">💸 Prowizje Stripe</p>
+                        <p id="eventTotalFees" class="text-2xl font-bold text-red-700">0 PLN</p>
+                        <p class="text-xs text-gray-500 mt-1">koszt transakcji</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 p-4 rounded-lg border border-emerald-200">
+                        <p class="text-xs text-gray-600 mb-1">💰 Wypłacone na konto</p>
+                        <p id="eventPaidOutRevenue" class="text-2xl font-bold text-emerald-700">0 PLN</p>
+                        <p class="text-xs text-gray-500 mt-1"><span id="eventPaidOutCount">0</span> transakcji</p>
+                        <p class="text-xs text-red-600 mt-0.5">minus <span id="eventPaidOutFees">0</span> PLN prowizji</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-amber-50 to-amber-100 p-4 rounded-lg border border-amber-200">
+                        <p class="text-xs text-gray-600 mb-1">⏳ Oczekujące wypłaty</p>
+                        <p id="eventPendingRevenue" class="text-2xl font-bold text-amber-700">0 PLN</p>
+                        <p class="text-xs text-gray-500 mt-1"><span id="eventPendingCount">0</span> transakcji</p>
+                        <p class="text-xs text-red-600 mt-0.5">minus <span id="eventPendingFees">0</span> PLN prowizji</p>
+                    </div>
+                    <div class="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded-lg border border-gray-200">
+                        <p class="text-xs text-gray-600 mb-1">Średnia wartość (netto)</p>
+                        <p id="eventAverageRevenue" class="text-2xl font-bold text-gray-700">0 PLN</p>
+                        <p class="text-xs text-gray-500 mt-1">na transakcję</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Filters Section -->
+        <div id="filtersSection" class="hidden bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-xl font-semibold mb-4">3. Filtry</h2>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Event</label>
+                    <select id="eventFilter" class="w-full border border-gray-300 rounded-md px-3 py-2">
+                        <option value="">Wszystkie</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Status płatności</label>
+                    <select id="statusFilter" class="w-full border border-gray-300 rounded-md px-3 py-2">
+                        <option value="">Wszystkie</option>
+                        <option value="paid">Zapłacone</option>
+                        <option value="pending">Oczekujące</option>
+                        <option value="failed">Nieudane</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Status wypłaty</label>
+                    <select id="payoutFilter" class="w-full border border-gray-300 rounded-md px-3 py-2">
+                        <option value="">Wszystkie</option>
+                        <option value="yes">Wypłacone</option>
+                        <option value="no">Oczekujące</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Szukaj</label>
+                    <input type="text" id="searchFilter" placeholder="Email lub nazwisko..." 
+                           class="w-full border border-gray-300 rounded-md px-3 py-2">
+                </div>
+            </div>
+            <div class="mt-4 flex gap-4">
+                <button id="exportBtn" class="bg-green-600 text-white px-6 py-2 rounded-md hover:bg-green-700">
+                    Eksportuj do CSV
+                </button>
+                <button id="clearFiltersBtn" class="bg-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-400">
+                    Wyczyść filtry
+                </button>
+            </div>
+        </div>
+
+        <!-- Table Section -->
+        <div id="tableSection" class="hidden bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-semibold mb-4">4. Transakcje</h2>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="event">
+                                Event ↕
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="email">
+                                Email ↕
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="name">
+                                Imię i nazwisko ↕
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="date">
+                                Data płatności ↕
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="amount">
+                                Kwota netto ↕
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="fee">
+                                Prowizja ↕
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="status">
+                                Status płatności ↕
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="payout">
+                                Wypłacone ↕
+                            </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                                Payment ID
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody" class="bg-white divide-y divide-gray-200">
+                    </tbody>
+                </table>
+            </div>
+            <div id="noResults" class="hidden text-center py-8 text-gray-500">
+                Brak wyników spełniających kryteria filtrowania
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = {
+            apiKey: "AIzaSyBOCbY66s96wa5oMTxdJ4xumceAcEQRVaU",
+            authDomain: "kdm-events-production.firebaseapp.com",
+            projectId: "kdm-events-production",
+            storageBucket: "kdm-events-production.appspot.com",
+            messagingSenderId: "354358706231",
+            appId: "1:354358706231:web:805f7c812be92c75437fb2",
+            measurementId: "G-XPGF4X9ZZW"
+        };
+
+        let eventsData = [];
+        let paymentsData = [];
+        let mergedData = [];
+        let filteredData = [];
+        let sortColumn = null;
+        let sortDirection = 'asc';
+        let firestoreConnected = false;
+        let db = null;
+        let autoRefreshInterval = null;
+        
+        // Stripe API state
+        let stripeApiConnected = false;
+        let stripeApiUrl = '';
+
+        // Stripe API functions
+        function getStripeApiBaseUrl() {
+            const input = document.getElementById('stripeApiUrl');
+            const url = input.value.trim();
+            // If empty, use relative URL (same server)
+            if (!url) return '';
+            // Remove trailing slash
+            return url.replace(/\/$/, '');
+        }
+
+        function updateStripeApiStatus(message, className) {
+            const statusEl = document.getElementById('stripeApiStatus');
+            statusEl.textContent = message;
+            statusEl.className = `text-sm ${className}`;
+        }
+
+        function updateStripeConnectionInfo(message) {
+            document.getElementById('stripeConnectionInfo').textContent = message;
+        }
+
+        async function fetchFromStripeApi() {
+            try {
+                const baseUrl = getStripeApiBaseUrl();
+                const days = document.getElementById('stripeDaysRange').value;
+                
+                updateStripeApiStatus('⏳ Pobieranie danych ze Stripe API...', 'text-purple-600');
+                updateStripeConnectionInfo('Łączenie z API...');
+                
+                const response = await fetch(`${baseUrl}/api/stripe-unified?days=${days}&limit=500`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.message || `HTTP ${response.status}`);
+                }
+                
+                const result = await response.json();
+                
+                if (!result.success) {
+                    throw new Error(result.error || 'Unknown error');
+                }
+                
+                // Transform API data to match CSV format expected by mergeData()
+                paymentsData = result.data.map(payment => ({
+                    'id': payment.id,
+                    'PaymentIntent ID': payment['PaymentIntent ID'],
+                    'Created date (UTC)': payment['Created date (UTC)'],
+                    'Created': payment['Created date (UTC)'],
+                    'Amount': payment.Amount,
+                    'Converted Amount': payment['Converted Amount'],
+                    'Currency': payment.Currency,
+                    'Converted Currency': payment['Converted Currency'],
+                    'Fee': payment.Fee,
+                    'Fees': payment.Fee,
+                    'Net': payment.Net,
+                    'Status': payment.Status,
+                    'Transfer': payment.Transfer || payment.payout_id || '',
+                    'payout_id': payment.payout_id || '',
+                    'Customer Email': payment['Customer Email'],
+                    'Card Brand': payment['Card Brand'],
+                    'Card Last4': payment['Card Last4'],
+                    'Payment Source Type': payment['Payment Source Type'],
+                    'Description': payment.Description
+                }));
+                
+                const timestamp = new Date().toLocaleTimeString('pl-PL');
+                updateStripeApiStatus(
+                    `✅ Pobrano ${paymentsData.length} płatności (${timestamp})`, 
+                    'text-green-600 font-semibold'
+                );
+                updateStripeConnectionInfo(
+                    `Połączono! ${result.count} transakcji z okresu ${result.date_range.from} - ${result.date_range.to}`
+                );
+                
+                // Update payments status in the file upload section
+                document.getElementById('paymentsStatus').textContent = 
+                    `✓ Załadowano ${paymentsData.length} płatności ze Stripe API`;
+                document.getElementById('paymentsStatus').className = 'mt-2 text-sm text-green-600';
+                
+                stripeApiConnected = true;
+                document.getElementById('refreshStripeApiBtn').disabled = false;
+                
+                // Enable process button if we also have events data
+                checkReady();
+                
+                return true;
+            } catch (error) {
+                console.error('Stripe API Error:', error);
+                updateStripeApiStatus(
+                    `❌ Błąd: ${error.message}`, 
+                    'text-red-600'
+                );
+                updateStripeConnectionInfo(
+                    `Błąd połączenia: ${error.message}. Sprawdź URL i czy serwer działa.`
+                );
+                return false;
+            }
+        }
+
+        // Initialize Firebase
+        function initFirebase() {
+            try {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                    db = firebase.firestore();
+                    console.log('Firebase initialized successfully');
+                    return true;
+                }
+                return true;
+            } catch (error) {
+                console.error('Error initializing Firebase:', error);
+                return false;
+            }
+        }
+
+        // Fetch data from Firestore
+        async function fetchFromFirestore() {
+            try {
+                updateFirestoreStatus('⏳ Pobieranie danych z Firestore...', 'text-blue-600');
+                
+                if (!db) {
+                    const initialized = initFirebase();
+                    if (!initialized) {
+                        throw new Error('Nie udało się zainicjalizować Firebase');
+                    }
+                }
+                
+                const snapshot = await db.collection('events_transactions').get();
+                
+                eventsData = snapshot.docs.map(doc => {
+                    const data = doc.data();
+                    // Map Firestore document to CSV format
+                    return {
+                        '_name': data._name || data.event_name || '',
+                        'Email': data.email || '',
+                        'Data': typeof data.data === 'object' ? JSON.stringify(data.data) : data.data || '{}',
+                        'payment_date': data.payment_date || '',
+                        'Payment Status': data.payment_status || data['Payment Status'] || '',
+                        'payment_id': data.payment_id || '',
+                        'Event Id': data.event_id || '',
+                        'ID': doc.id,
+                        'ticket_stamped': data.ticket_stamped || '',
+                        'Phone Number': data.phone || '',
+                        'First Name': data.firstname || extractField(data.data, 'firstname'),
+                        'Family Name': data.lastname || extractField(data.data, 'lastname')
+                    };
+                });
+                
+                const timestamp = new Date().toLocaleTimeString('pl-PL');
+                updateFirestoreStatus(
+                    `✅ Pobrano ${eventsData.length} transakcji (${timestamp})`, 
+                    'text-green-600 font-semibold'
+                );
+                
+                // Update events status
+                document.getElementById('eventsStatus').textContent = 
+                    `✓ Załadowano ${eventsData.length} wierszy z Firestore`;
+                document.getElementById('eventsStatus').className = 'mt-2 text-sm text-green-600';
+                
+                // Enable process button if we also have payments data
+                checkReady();
+                
+                firestoreConnected = true;
+                document.getElementById('refreshFirestoreBtn').disabled = false;
+                
+                return true;
+            } catch (error) {
+                console.error('Error fetching from Firestore:', error);
+                updateFirestoreStatus(
+                    `❌ Błąd: ${error.message}`, 
+                    'text-red-600'
+                );
+                return false;
+            }
+        }
+
+        // Helper function to update Firestore status
+        function updateFirestoreStatus(message, className) {
+            const statusEl = document.getElementById('firestoreStatus');
+            statusEl.textContent = message;
+            statusEl.className = `text-sm ${className}`;
+        }
+
+        // Extract field from data object
+        function extractFieldFromData(data, fieldName) {
+            if (typeof data === 'object' && data !== null) {
+                return data[fieldName] || '';
+            }
+            if (typeof data === 'string') {
+                try {
+                    const parsed = JSON.parse(data);
+                    return parsed[fieldName] || '';
+                } catch {
+                    return '';
+                }
+            }
+            return '';
+        }
+
+        // File upload handlers
+        document.getElementById('eventsFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                Papa.parse(file, {
+                    header: true,
+                    complete: function(results) {
+                        eventsData = results.data;
+                        document.getElementById('eventsStatus').textContent = `✓ Załadowano ${eventsData.length} wierszy`;
+                        document.getElementById('eventsStatus').className = 'mt-2 text-sm text-green-600';
+                        checkReady();
+                    }
+                });
+            }
+        });
+
+        document.getElementById('paymentsFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                Papa.parse(file, {
+                    header: true,
+                    complete: function(results) {
+                        paymentsData = results.data;
+                        document.getElementById('paymentsStatus').textContent = `✓ Załadowano ${paymentsData.length} wierszy`;
+                        document.getElementById('paymentsStatus').className = 'mt-2 text-sm text-green-600';
+                        checkReady();
+                    }
+                });
+            }
+        });
+
+        function checkReady() {
+            // Enable if we have events data (from CSV or Firestore) AND payments data
+            if (eventsData.length > 0 && paymentsData.length > 0) {
+                document.getElementById('processBtn').disabled = false;
+            }
+        }
+
+        // Firestore Connect button handler
+        document.getElementById('connectFirestoreBtn').addEventListener('click', async function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Łączenie...';
+            btn.className = 'bg-gray-400 text-white px-6 py-2 rounded-md cursor-not-allowed';
+            
+            const success = await fetchFromFirestore();
+            
+            if (success) {
+                btn.textContent = '✓ Połączono';
+                btn.className = 'bg-green-600 text-white px-6 py-2 rounded-md';
+            } else {
+                btn.disabled = false;
+                btn.textContent = '🔌 Spróbuj ponownie';
+                btn.className = 'bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition-colors';
+            }
+        });
+
+        // Firestore Refresh button handler
+        document.getElementById('refreshFirestoreBtn').addEventListener('click', async function() {
+            const btn = this;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Odświeżanie...';
+            
+            await fetchFromFirestore();
+            
+            btn.disabled = false;
+            btn.textContent = originalText;
+        });
+
+        // Auto-refresh checkbox handler
+        document.getElementById('autoRefreshCheck').addEventListener('change', function() {
+            if (this.checked) {
+                if (firestoreConnected) {
+                    // Start auto-refresh
+                    autoRefreshInterval = setInterval(() => {
+                        fetchFromFirestore();
+                    }, 5 * 60 * 1000); // 5 minutes
+                    console.log('Auto-refresh enabled (5 min interval)');
+                } else {
+                    // Can't enable without connection
+                    this.checked = false;
+                    alert('Najpierw połącz się z Firestore');
+                }
+            } else {
+                // Stop auto-refresh
+                if (autoRefreshInterval) {
+                    clearInterval(autoRefreshInterval);
+                    autoRefreshInterval = null;
+                    console.log('Auto-refresh disabled');
+                }
+            }
+        });
+
+        // Stripe API Connect button handler
+        document.getElementById('connectStripeApiBtn').addEventListener('click', async function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Łączenie...';
+            btn.className = 'bg-gray-400 text-white px-6 py-2 rounded-md cursor-not-allowed';
+            
+            const success = await fetchFromStripeApi();
+            
+            if (success) {
+                btn.textContent = '✓ Połączono ze Stripe';
+                btn.className = 'bg-green-600 text-white px-6 py-2 rounded-md';
+            } else {
+                btn.disabled = false;
+                btn.textContent = '💳 Spróbuj ponownie';
+                btn.className = 'bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition-colors';
+            }
+        });
+
+        // Stripe API Refresh button handler
+        document.getElementById('refreshStripeApiBtn').addEventListener('click', async function() {
+            const btn = this;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Odświeżanie...';
+            
+            await fetchFromStripeApi();
+            
+            btn.disabled = false;
+            btn.textContent = originalText;
+        });
+
+        // Save Stripe API URL to localStorage
+        document.getElementById('stripeApiUrl').addEventListener('change', function() {
+            localStorage.setItem('stripeApiUrl', this.value);
+        });
+
+        // Load saved Stripe API URL on page load
+        const savedStripeApiUrl = localStorage.getItem('stripeApiUrl');
+        if (savedStripeApiUrl) {
+            document.getElementById('stripeApiUrl').value = savedStripeApiUrl;
+        }
+
+        // Process button handler
+        document.getElementById('processBtn').addEventListener('click', function() {
+            mergeData();
+            populateEventFilter();
+            updateSummary();
+            applyFilters();
+            document.getElementById('summarySection').classList.remove('hidden');
+            document.getElementById('filtersSection').classList.remove('hidden');
+            document.getElementById('tableSection').classList.remove('hidden');
+        });
+
+        // Merge data logic
+        function mergeData() {
+            mergedData = [];
+            
+            eventsData.forEach(event => {
+                const paymentId = event.payment_id;
+                
+                if (!paymentId) {
+                    // Transaction without payment_id (pending/unpaid)
+                    mergedData.push({
+                        event: event._name || '',
+                        email: event.Email || '',
+                        firstName: extractField(event.Data, 'firstname'),
+                        lastName: extractField(event.Data, 'lastname'),
+                        fullName: `${extractField(event.Data, 'firstname')} ${extractField(event.Data, 'lastname')}`,
+                        paymentDate: event.payment_date || '',
+                        amount: '',
+                        fee: '',
+                        currency: '',
+                        status: event['Payment Status'] || 'pending',
+                        payoutId: '',
+                        hasPayout: 'no',
+                        paymentId: '',
+                        eventId: event['Event Id'] || '',
+                        registrationId: event.ID || ''
+                    });
+                } else {
+                    // Find matching payment in Stripe data
+                    const payment = paymentsData.find(p => p['PaymentIntent ID'] === paymentId || p.id === paymentId);
+                    
+                    if (payment) {
+                        const payoutId = findPayoutId(payment);
+                        mergedData.push({
+                            event: event._name || '',
+                            email: event.Email || '',
+                            firstName: extractField(event.Data, 'firstname'),
+                            lastName: extractField(event.Data, 'lastname'),
+                            fullName: `${extractField(event.Data, 'firstname')} ${extractField(event.Data, 'lastname')}`,
+                            paymentDate: payment['Created date (UTC)'] || payment.Created || event.payment_date || '',
+                            amount: parseFloat(payment.Net || payment['Converted Amount'] || 0),
+                            fee: parseFloat(payment.Fee || payment.Fees || 0),
+                            currency: payment.Currency || payment['Converted Currency'] || 'pln',
+                            status: normalizeStatus(payment.Status),
+                            payoutId: payoutId,
+                            hasPayout: payoutId ? 'yes' : 'no',
+                            paymentId: paymentId,
+                            eventId: event['Event Id'] || '',
+                            registrationId: event.ID || ''
+                        });
+                    } else {
+                        // Payment ID exists but not found in Stripe data
+                        mergedData.push({
+                            event: event._name || '',
+                            email: event.Email || '',
+                            firstName: extractField(event.Data, 'firstname'),
+                            lastName: extractField(event.Data, 'lastname'),
+                            fullName: `${extractField(event.Data, 'firstname')} ${extractField(event.Data, 'lastname')}`,
+                            paymentDate: event.payment_date || '',
+                            amount: '',
+                            fee: '',
+                            currency: '',
+                            status: 'pending',
+                            payoutId: '',
+                            hasPayout: 'no',
+                            paymentId: paymentId,
+                            eventId: event['Event Id'] || '',
+                            registrationId: event.ID || ''
+                        });
+                    }
+                }
+            });
+        }
+
+        // Extract field from JSON string
+        function extractField(jsonString, fieldName) {
+            try {
+                const data = JSON.parse(jsonString || '{}');
+                return data[fieldName] || '';
+            } catch {
+                return '';
+            }
+        }
+
+        // Find payout ID in payment record
+        function findPayoutId(payment) {
+            // Check common payout ID columns
+            const columns = ['Transfer', 'Destination', 'po_id', 'payout_id'];
+            for (let col of columns) {
+                if (payment[col] && payment[col].startsWith('po_')) {
+                    return payment[col];
+                }
+            }
+            // Check all columns for po_ prefix
+            for (let key in payment) {
+                if (payment[key] && typeof payment[key] === 'string' && payment[key].startsWith('po_')) {
+                    return payment[key];
+                }
+            }
+            return '';
+        }
+
+        // Normalize status
+        function normalizeStatus(status) {
+            if (!status) return 'pending';
+            const s = status.toLowerCase();
+            if (s === 'paid' || s === 'succeeded') return 'paid';
+            if (s === 'failed' || s === 'declined') return 'failed';
+            return 'pending';
+        }
+
+        // Populate event filter
+        function populateEventFilter() {
+            const events = [...new Set(mergedData.map(d => d.event))].filter(e => e);
+            const select = document.getElementById('eventFilter');
+            events.forEach(event => {
+                const option = document.createElement('option');
+                option.value = event;
+                option.textContent = event;
+                select.appendChild(option);
+            });
+        }
+
+        // Update summary
+        function updateSummary() {
+            const total = mergedData.length;
+            const paidOut = mergedData.filter(d => d.hasPayout === 'yes').length;
+            const pending = mergedData.filter(d => d.status === 'pending' || (d.status === 'paid' && d.hasPayout === 'no')).length;
+            const failed = mergedData.filter(d => d.status === 'failed').length;
+
+            document.getElementById('totalCount').textContent = total;
+            document.getElementById('paidOutCount').textContent = paidOut;
+            document.getElementById('pendingCount').textContent = pending;
+            document.getElementById('failedCount').textContent = failed;
+        }
+
+        // Update event financial summary
+        function updateEventFinancialSummary() {
+            const eventFilter = document.getElementById('eventFilter').value;
+            const eventFinancialSection = document.getElementById('eventFinancialSection');
+            
+            if (eventFilter && filteredData.length > 0) {
+                // Show the section
+                eventFinancialSection.classList.remove('hidden');
+                
+                // Update event name
+                document.getElementById('selectedEventName').textContent = eventFilter;
+                
+                // Calculate totals
+                let totalRevenue = 0;
+                let paidOutRevenue = 0;
+                let pendingRevenue = 0;
+                let totalFees = 0;
+                let paidOutFees = 0;
+                let pendingFees = 0;
+                let paidOutCount = 0;
+                let pendingCount = 0;
+                
+                filteredData.forEach(row => {
+                    const amount = parseFloat(row.amount) || 0;
+                    const fee = parseFloat(row.fee) || 0;
+                    
+                    totalRevenue += amount;
+                    totalFees += fee;
+                    
+                    if (row.hasPayout === 'yes') {
+                        // Już wypłacone przez Stripe
+                        paidOutRevenue += amount;
+                        paidOutFees += fee;
+                        paidOutCount++;
+                    } else {
+                        // Wszystko co nie jest wypłacone = oczekujące
+                        pendingRevenue += amount;
+                        pendingFees += fee;
+                        pendingCount++;
+                    }
+                });
+                
+                const average = filteredData.length > 0 ? totalRevenue / filteredData.length : 0;
+                
+                // Update UI
+                document.getElementById('eventTotalRevenue').textContent = 
+                    totalRevenue.toFixed(2) + ' PLN';
+                document.getElementById('eventTotalCount').textContent = filteredData.length;
+                
+                document.getElementById('eventTotalFees').textContent = 
+                    totalFees.toFixed(2) + ' PLN';
+                
+                document.getElementById('eventPaidOutRevenue').textContent = 
+                    paidOutRevenue.toFixed(2) + ' PLN';
+                document.getElementById('eventPaidOutCount').textContent = paidOutCount;
+                document.getElementById('eventPaidOutFees').textContent = 
+                    paidOutFees.toFixed(2);
+                
+                document.getElementById('eventPendingRevenue').textContent = 
+                    pendingRevenue.toFixed(2) + ' PLN';
+                document.getElementById('eventPendingCount').textContent = pendingCount;
+                document.getElementById('eventPendingFees').textContent = 
+                    pendingFees.toFixed(2);
+                
+                document.getElementById('eventAverageRevenue').textContent = 
+                    average.toFixed(2) + ' PLN';
+            } else {
+                // Hide the section if no event filter
+                eventFinancialSection.classList.add('hidden');
+            }
+        }
+
+        // Apply filters
+        function applyFilters() {
+            const eventFilter = document.getElementById('eventFilter').value.toLowerCase();
+            const statusFilter = document.getElementById('statusFilter').value;
+            const payoutFilter = document.getElementById('payoutFilter').value;
+            const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
+
+            filteredData = mergedData.filter(row => {
+                if (eventFilter && row.event.toLowerCase() !== eventFilter) return false;
+                if (statusFilter && row.status !== statusFilter) return false;
+                if (payoutFilter && row.hasPayout !== payoutFilter) return false;
+                if (searchFilter && !row.email.toLowerCase().includes(searchFilter) && 
+                    !row.fullName.toLowerCase().includes(searchFilter)) return false;
+                return true;
+            });
+
+            updateEventFinancialSummary();
+            renderTable();
+        }
+
+        // Render table
+        function renderTable() {
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            if (filteredData.length === 0) {
+                document.getElementById('noResults').classList.remove('hidden');
+                return;
+            }
+
+            document.getElementById('noResults').classList.add('hidden');
+
+            // Apply sorting
+            if (sortColumn) {
+                filteredData.sort((a, b) => {
+                    let aVal = a[sortColumn];
+                    let bVal = b[sortColumn];
+                    
+                    // Special handling for amount - parse as number
+                    if (sortColumn === 'amount') {
+                        aVal = parseFloat(aVal) || 0;
+                        bVal = parseFloat(bVal) || 0;
+                    }
+                    
+                    // Special handling for date - parse as Date object
+                    if (sortColumn === 'paymentDate' || sortColumn === 'date') {
+                        aVal = aVal ? new Date(aVal).getTime() : 0;
+                        bVal = bVal ? new Date(bVal).getTime() : 0;
+                    }
+                    
+                    if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+                    if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+                    return 0;
+                });
+            }
+
+            filteredData.forEach(row => {
+                const tr = document.createElement('tr');
+                let statusClass = '';
+                if (row.status === 'paid' && row.hasPayout === 'yes') statusClass = 'status-paid';
+                else if (row.status === 'paid' && row.hasPayout === 'no') statusClass = 'status-pending';
+                else if (row.status === 'failed') statusClass = 'status-failed';
+                else statusClass = 'status-pending';
+                
+                tr.className = statusClass;
+                
+                tr.innerHTML = `
+                    <td class="px-4 py-3 text-sm text-gray-900">${row.event}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">${row.email}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">${row.fullName}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">${formatDate(row.paymentDate)}</td>
+                    <td class="px-4 py-3 text-sm font-semibold text-green-700">${formatAmount(row.amount, row.currency)}</td>
+                    <td class="px-4 py-3 text-sm text-gray-500">${formatAmount(row.fee, row.currency)}</td>
+                    <td class="px-4 py-3 text-sm text-gray-900">${formatStatus(row.status)}</td>
+                    <td class="px-4 py-3 text-sm ${row.hasPayout === 'yes' ? 'payout-yes' : 'payout-no'}">
+                        ${row.hasPayout === 'yes' ? 'Tak' : 'Nie'}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-600 font-mono text-xs">${row.paymentId}</td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Format helpers
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            try {
+                const date = new Date(dateStr);
+                return date.toLocaleDateString('pl-PL');
+            } catch {
+                return dateStr;
+            }
+        }
+
+        function formatAmount(amount, currency) {
+            if (!amount) return '-';
+            return `${parseFloat(amount).toFixed(2)} ${(currency || 'PLN').toUpperCase()}`;
+        }
+
+        function formatStatus(status) {
+            const statusMap = {
+                'paid': 'Zapłacone',
+                'pending': 'Oczekujące',
+                'failed': 'Nieudane'
+            };
+            return statusMap[status] || status;
+        }
+
+        // Filter event listeners
+        document.getElementById('eventFilter').addEventListener('change', applyFilters);
+        document.getElementById('statusFilter').addEventListener('change', applyFilters);
+        document.getElementById('payoutFilter').addEventListener('change', applyFilters);
+        document.getElementById('searchFilter').addEventListener('input', applyFilters);
+
+        // Clear filters
+        document.getElementById('clearFiltersBtn').addEventListener('click', function() {
+            document.getElementById('eventFilter').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('payoutFilter').value = '';
+            document.getElementById('searchFilter').value = '';
+            applyFilters();
+        });
+
+        // Sorting
+        document.querySelectorAll('th[data-sort]').forEach(th => {
+            th.addEventListener('click', function() {
+                const column = this.dataset.sort;
+                if (sortColumn === column) {
+                    sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+                } else {
+                    sortColumn = column;
+                    sortDirection = 'asc';
+                }
+                renderTable();
+            });
+        });
+
+        // Export to CSV
+        document.getElementById('exportBtn').addEventListener('click', function() {
+            const csv = Papa.unparse(filteredData.map(row => ({
+                'Event': row.event,
+                'Email': row.email,
+                'Imię': row.firstName,
+                'Nazwisko': row.lastName,
+                'Data płatności': row.paymentDate,
+                'Kwota netto': row.amount,
+                'Prowizja Stripe': row.fee,
+                'Waluta': row.currency,
+                'Status płatności': formatStatus(row.status),
+                'Wypłacone': row.hasPayout === 'yes' ? 'Tak' : 'Nie',
+                'Payout ID': row.payoutId,
+                'Payment ID': row.paymentId,
+                'Event ID': row.eventId,
+                'Registration ID': row.registrationId
+            })));
+
+            const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', `reconciliation_${new Date().toISOString().split('T')[0]}.csv`);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+
+        // Auto-connect to Firestore on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded - attempting auto-connect to Firestore');
+            // Small delay to ensure DOM is ready
+            setTimeout(async function() {
+                const connectBtn = document.getElementById('connectFirestoreBtn');
+                if (connectBtn && !firestoreConnected) {
+                    console.log('Triggering auto-connect...');
+                    connectBtn.click();
+                }
+            }, 500);
+        });
+    </script>
+</body>
+</html>

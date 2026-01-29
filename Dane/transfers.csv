@@ -1,0 +1,6 @@
+Type,ID,Created,Description,Amount,Currency,Converted Amount,Fees,Net,Converted Currency,Details,Customer ID,Customer Email,Customer Name,accountId (metadata),personID (metadata),email (metadata),lastname (metadata),firstname (metadata),authenticationID (metadata)
+Charge,ch_3STKdhImHzUjCELv3CrumA7m,2025-11-14 10:54,,124.00,pln,124.00,2.86,121.14,pln,Kinga Kuriata
+Charge,ch_3SU5S1ImHzUjCELv21Kvr16H,2025-11-16 12:53,,100.00,pln,100.00,2.50,97.50,pln,Bozydar Sule
+Charge,ch_3SUw8OImHzUjCELv2toCt8SI,2025-11-18 21:08,,150.00,pln,150.00,3.25,146.75,pln,Kinga Kuriata
+Charge,ch_3SVWsEImHzUjCELv2P8sbDze,2025-11-20 12:22,,50.00,pln,50.00,1.75,48.25,pln,Bartosz  Marzec
+Charge,py_3STo7gImHzUjCELv20VQdcS7,2025-11-15 18:23,,9.00,pln,9.00,1.14,7.86,pln,
