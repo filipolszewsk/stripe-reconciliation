@@ -1,23 +1,13 @@
 {
   "version": 2,
-  "builds": [
+  "rewrites": [
     {
-      "src": "api/**/*.js",
-      "use": "@vercel/node"
+      "source": "/",
+      "destination": "/reconciliation.html"
     },
     {
-      "src": "reconciliation.html",
-      "use": "@vercel/static"
-    }
-  ],
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/reconciliation.html"
+      "source": "/index.html",
+      "destination": "/reconciliation.html"
     }
   ],
   "headers": [
