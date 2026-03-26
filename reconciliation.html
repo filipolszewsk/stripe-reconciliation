@@ -101,9 +101,8 @@
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"></path>
                 </svg>
                 <h2 class="text-xl font-semibold text-gray-800">Auto-sync ze Stripe API</h2>
-                <span class="ml-2 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded-full">NOWE!</span>
             </div>
-            <p class="text-sm text-gray-600 mb-4">Połącz się ze Stripe API aby automatycznie pobierać dane o płatnościach i wypłatach. Wymaga uruchomienia backendu na Vercel.</p>
+            <p class="text-sm text-gray-600 mb-4">Połącz się ze Stripe API aby automatycznie pobierać dane o płatnościach i wypłatach. Obsługuje <strong>dwa konta Stripe</strong> jednocześnie.</p>
             
             <div class="mb-4">
                 <label class="block text-sm font-medium text-gray-700 mb-2">URL API (Vercel)</label>
@@ -111,18 +110,43 @@
                        placeholder="https://twoja-app.vercel.app lub http://localhost:3000"
                        value=""
                        class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:ring-purple-500 focus:border-purple-500">
-                <p class="mt-1 text-xs text-gray-500">Zostaw puste aby użyć relatywnego URL (gdy HTML jest na tym samym serwerze)</p>
+                <p class="mt-1 text-xs text-gray-500">Zostaw puste gdy HTML jest na tym samym serwerze co API (Vercel).</p>
             </div>
             
-            <div class="flex flex-wrap items-center gap-4 mb-4">
-                <button id="connectStripeApiBtn" 
-                        class="bg-purple-600 text-white px-6 py-2 rounded-md hover:bg-purple-700 transition-colors">
-                    💳 Połącz ze Stripe API
-                </button>
-                <button id="refreshStripeApiBtn" disabled
-                        class="bg-gray-300 text-gray-700 px-6 py-2 rounded-md hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors">
-                    🔄 Odśwież dane Stripe
-                </button>
+            <!-- Account 1 -->
+            <div class="mb-3 p-3 bg-white rounded-lg border border-purple-200">
+                <p class="text-xs font-semibold text-purple-700 mb-2 uppercase tracking-wide">Konto 1 — STRIPE_SECRET_KEY</p>
+                <div class="flex flex-wrap items-center gap-3">
+                    <button id="connectStripeApiBtn" 
+                            class="bg-purple-600 text-white px-5 py-2 rounded-md hover:bg-purple-700 transition-colors text-sm">
+                        💳 Połącz konto 1
+                    </button>
+                    <button id="refreshStripeApiBtn" disabled
+                            class="bg-gray-300 text-gray-700 px-5 py-2 rounded-md hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm">
+                        🔄 Odśwież
+                    </button>
+                    <div id="stripeApiStatus" class="text-sm text-gray-500 flex-1"></div>
+                </div>
+            </div>
+
+            <!-- Account 2 -->
+            <div class="mb-4 p-3 bg-white rounded-lg border border-indigo-200">
+                <p class="text-xs font-semibold text-indigo-700 mb-2 uppercase tracking-wide">Konto 2 — STRIPE_SECRET_KEY_2 <span class="font-normal text-gray-400">(opcjonalne)</span></p>
+                <div class="flex flex-wrap items-center gap-3">
+                    <button id="connectStripeApi2Btn" 
+                            class="bg-indigo-600 text-white px-5 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm">
+                        💳 Połącz konto 2
+                    </button>
+                    <button id="refreshStripeApi2Btn" disabled
+                            class="bg-gray-300 text-gray-700 px-5 py-2 rounded-md hover:bg-gray-400 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-sm">
+                        🔄 Odśwież
+                    </button>
+                    <div id="stripeApi2Status" class="text-sm text-gray-500 flex-1"></div>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-4 mb-3">
+                <label class="text-sm text-gray-600 font-medium">Zakres dat:</label>
                 <select id="stripeDaysRange" class="border border-gray-300 rounded-md px-3 py-2 text-sm">
                     <option value="30">Ostatnie 30 dni</option>
                     <option value="60">Ostatnie 60 dni</option>
@@ -130,12 +154,11 @@
                     <option value="180">Ostatnie 180 dni</option>
                     <option value="365">Ostatni rok</option>
                 </select>
-                <div id="stripeApiStatus" class="text-sm text-gray-500 flex-1"></div>
             </div>
             
             <div class="bg-purple-50 border border-purple-200 rounded-md p-3 text-sm">
                 <p class="font-medium text-purple-800 mb-1">Status połączenia:</p>
-                <p id="stripeConnectionInfo" class="text-purple-600">Niepołączono - wprowadź URL API i kliknij "Połącz"</p>
+                <p id="stripeConnectionInfo" class="text-purple-600">Niepołączono - kliknij "Połącz konto 1" (i opcjonalnie "Połącz konto 2")</p>
             </div>
         </div>
 
@@ -205,7 +228,7 @@
         <!-- Filters Section -->
         <div id="filtersSection" class="hidden bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 class="text-xl font-semibold mb-4">3. Filtry</h2>
-            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+            <div class="grid grid-cols-1 md:grid-cols-6 gap-4">
                 <div class="relative" id="eventFilterWrapper">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Event</label>
                     <button type="button" id="eventFilterBtn"
@@ -231,6 +254,14 @@
                         <option value="paid">Zapłacone</option>
                         <option value="pending">Oczekujące</option>
                         <option value="failed">Nieudane</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Konto Stripe</label>
+                    <select id="stripeAccountFilter" class="w-full border border-gray-300 rounded-md px-3 py-2">
+                        <option value="">Wszystkie</option>
+                        <option value="Konto 1">Konto 1</option>
+                        <option value="Konto 2">Konto 2</option>
                     </select>
                 </div>
                 <div>
@@ -297,6 +328,9 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="payoutDate">
                                 Data wypłacenia ↕
                             </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="stripeAccount">
+                                Konto Stripe ↕
+                            </th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Payment ID
                             </th>
@@ -338,6 +372,8 @@
         
         // Stripe API state
         let stripeApiConnected = false;
+        let stripeApi2Connected = false;
+        let paymentsDataAccount2 = [];
         let stripeApiUrl = '';
 
         // Stripe API functions
@@ -360,105 +396,134 @@
             document.getElementById('stripeConnectionInfo').textContent = message;
         }
 
-        async function fetchFromStripeApi() {
+        function transformPayments(data, accountLabel) {
+            return data.map(payment => ({
+                'id': payment.id,
+                'PaymentIntent ID': payment['PaymentIntent ID'],
+                'Created date (UTC)': payment['Created date (UTC)'],
+                'Created': payment['Created date (UTC)'],
+                'Amount': payment.Amount,
+                'Converted Amount': payment['Converted Amount'],
+                'Currency': payment.Currency,
+                'Converted Currency': payment['Converted Currency'],
+                'Fee': payment.Fee,
+                'Fees': payment.Fee,
+                'Net': payment.Net,
+                'Status': payment.Status,
+                'Transfer': payment.Transfer || payment.payout_id || '',
+                'payout_id': payment.payout_id || '',
+                'Customer Email': payment['Customer Email'],
+                'Card Brand': payment['Card Brand'],
+                'Card Last4': payment['Card Last4'],
+                'Payment Source Type': payment['Payment Source Type'],
+                'Description': payment.Description,
+                '_stripeAccount': accountLabel
+            }));
+        }
+
+        function mergePaymentsData() {
+            // Combine account 1 + account 2 payments, deduplicate by PaymentIntent ID
+            const seen = new Set();
+            const combined = [...(paymentsData || []), ...(paymentsDataAccount2 || [])];
+            return combined.filter(p => {
+                const key = p['PaymentIntent ID'] || p['id'];
+                if (!key || seen.has(key)) return false;
+                seen.add(key);
+                return true;
+            });
+        }
+
+        async function fetchStripeAccount(accountNum) {
+            const baseUrl = getStripeApiBaseUrl();
+            const days = document.getElementById('stripeDaysRange').value;
+            const isAccount2 = accountNum === 2;
+            const accountLabel = isAccount2 ? 'Konto 2' : 'Konto 1';
+            const statusEl = isAccount2 ? 'stripeApi2Status' : 'stripeApiStatus';
+
+            document.getElementById(statusEl).textContent = '⏳ Pobieranie...';
+            document.getElementById(statusEl).className = 'text-sm text-purple-600';
+
             try {
-                const baseUrl = getStripeApiBaseUrl();
-                const days = document.getElementById('stripeDaysRange').value;
-                
-                updateStripeApiStatus('⏳ Pobieranie płatności ze Stripe API...', 'text-purple-600');
-                updateStripeConnectionInfo('Łączenie z API...');
-
-                // Fetch payments and payouts in parallel
+                const accountParam = isAccount2 ? '&account=2' : '&account=1';
                 const [paymentsResponse, payoutsResponse] = await Promise.all([
-                    fetch(`${baseUrl}/api/stripe-unified?days=${days}&limit=500`),
-                    fetch(`${baseUrl}/api/stripe-payouts?limit=100`)
+                    fetch(`${baseUrl}/api/stripe-unified?days=${days}&limit=500${accountParam}`),
+                    fetch(`${baseUrl}/api/stripe-payouts?limit=100${accountParam}`)
                 ]);
-                
+
                 if (!paymentsResponse.ok) {
-                    const error = await paymentsResponse.json();
-                    throw new Error(error.message || `HTTP ${paymentsResponse.status}`);
+                    const err = await paymentsResponse.json();
+                    throw new Error(err.message || `HTTP ${paymentsResponse.status}`);
                 }
-                
                 const result = await paymentsResponse.json();
-                if (!result.success) {
-                    throw new Error(result.error || 'Unknown error');
+                if (!result.success) throw new Error(result.error || 'Unknown error');
+
+                const transformed = transformPayments(result.data, accountLabel);
+                if (isAccount2) {
+                    paymentsDataAccount2 = transformed;
+                } else {
+                    paymentsData = transformed;
                 }
 
-                // Transform payments to match CSV format expected by mergeData()
-                paymentsData = result.data.map(payment => ({
-                    'id': payment.id,
-                    'PaymentIntent ID': payment['PaymentIntent ID'],
-                    'Created date (UTC)': payment['Created date (UTC)'],
-                    'Created': payment['Created date (UTC)'],
-                    'Amount': payment.Amount,
-                    'Converted Amount': payment['Converted Amount'],
-                    'Currency': payment.Currency,
-                    'Converted Currency': payment['Converted Currency'],
-                    'Fee': payment.Fee,
-                    'Fees': payment.Fee,
-                    'Net': payment.Net,
-                    'Status': payment.Status,
-                    'Transfer': payment.Transfer || payment.payout_id || '',
-                    'payout_id': payment.payout_id || '',
-                    'Customer Email': payment['Customer Email'],
-                    'Card Brand': payment['Card Brand'],
-                    'Card Last4': payment['Card Last4'],
-                    'Payment Source Type': payment['Payment Source Type'],
-                    'Description': payment.Description
-                }));
-
-                // Build payoutDateMap from payouts API
+                // Build payoutDateMap entries for this account
                 let payoutsCount = 0;
                 if (payoutsResponse.ok) {
                     try {
                         const payoutsResult = await payoutsResponse.json();
                         if (payoutsResult.success && payoutsResult.data) {
-                            payoutsData = payoutsResult.data;
-                            payoutDateMap = {};
                             payoutsResult.data.forEach(payout => {
                                 if (payout.id && payout.id.startsWith('po_') && payout.arrival_date) {
                                     payoutDateMap[payout.id] = payout.arrival_date;
                                 }
                             });
-                            payoutsCount = Object.keys(payoutDateMap).length;
-                            document.getElementById('payoutsStatus').textContent =
-                                `✓ ${payoutsCount} wypłat pobranych ze Stripe API`;
-                            document.getElementById('payoutsStatus').className = 'mt-2 text-sm text-green-600';
+                            payoutsCount = payoutsResult.data.length;
                         }
-                    } catch (e) {
-                        console.warn('Could not fetch payouts:', e);
-                    }
+                    } catch (e) { console.warn('Could not fetch payouts:', e); }
                 }
-                
+
                 const timestamp = new Date().toLocaleTimeString('pl-PL');
-                updateStripeApiStatus(
-                    `✅ Pobrano ${paymentsData.length} płatności + ${payoutsCount} wypłat (${timestamp})`, 
-                    'text-green-600 font-semibold'
-                );
+                document.getElementById(statusEl).textContent =
+                    `✅ ${result.count} płatności + ${payoutsCount} wypłat (${timestamp})`;
+                document.getElementById(statusEl).className = 'text-sm text-green-600 font-semibold';
+
+                if (isAccount2) {
+                    stripeApi2Connected = true;
+                    document.getElementById('refreshStripeApi2Btn').disabled = false;
+                } else {
+                    stripeApiConnected = true;
+                    document.getElementById('refreshStripeApiBtn').disabled = false;
+                    document.getElementById('paymentsStatus').textContent =
+                        `✓ ${result.count} płatności ze Stripe API`;
+                    document.getElementById('paymentsStatus').className = 'mt-2 text-sm text-green-600';
+                }
+
+                // Update combined summary in connection info
+                const total1 = paymentsData.length;
+                const total2 = paymentsDataAccount2.length;
+                const payoutsTotal = Object.keys(payoutDateMap).length;
                 updateStripeConnectionInfo(
-                    `Połączono! ${result.count} transakcji z okresu ${result.date_range.from} - ${result.date_range.to} · ${payoutsCount} wypłat z datami`
+                    `Konto 1: ${total1} płatności${stripeApi2Connected ? ` · Konto 2: ${total2} płatności` : ''} · ${payoutsTotal} wypłat z datami`
                 );
-                
-                document.getElementById('paymentsStatus').textContent = 
-                    `✓ ${paymentsData.length} płatności ze Stripe API`;
-                document.getElementById('paymentsStatus').className = 'mt-2 text-sm text-green-600';
-                
-                stripeApiConnected = true;
-                document.getElementById('refreshStripeApiBtn').disabled = false;
-                
+
+                // Update payouts status
+                document.getElementById('payoutsStatus').textContent =
+                    `✓ ${payoutsTotal} wypłat pobranych ze Stripe API`;
+                document.getElementById('payoutsStatus').className = 'mt-2 text-sm text-green-600';
+
+                // Refresh paymentsData to merged view and notify ready
+                paymentsData = mergePaymentsData();
                 checkReady();
                 return true;
             } catch (error) {
-                console.error('Stripe API Error:', error);
-                updateStripeApiStatus(
-                    `❌ Błąd: ${error.message}`, 
-                    'text-red-600'
-                );
-                updateStripeConnectionInfo(
-                    `Błąd połączenia: ${error.message}. Sprawdź URL i czy serwer działa.`
-                );
+                console.error(`Stripe API Error (account ${accountNum}):`, error);
+                document.getElementById(statusEl).textContent = `❌ ${error.message}`;
+                document.getElementById(statusEl).className = 'text-sm text-red-600';
+                updateStripeConnectionInfo(`Błąd konta ${accountNum}: ${error.message}`);
                 return false;
             }
+        }
+
+        async function fetchFromStripeApi() {
+            return fetchStripeAccount(1);
         }
 
         // Initialize Firebase
@@ -694,31 +759,50 @@
             const btn = this;
             btn.disabled = true;
             btn.textContent = 'Łączenie...';
-            btn.className = 'bg-gray-400 text-white px-6 py-2 rounded-md cursor-not-allowed';
-            
-            const success = await fetchFromStripeApi();
-            
+            btn.className = 'bg-gray-400 text-white px-5 py-2 rounded-md cursor-not-allowed text-sm';
+            const success = await fetchStripeAccount(1);
             if (success) {
-                btn.textContent = '✓ Połączono ze Stripe';
-                btn.className = 'bg-green-600 text-white px-6 py-2 rounded-md';
+                btn.textContent = '✓ Konto 1 połączone';
+                btn.className = 'bg-green-600 text-white px-5 py-2 rounded-md text-sm';
             } else {
                 btn.disabled = false;
-                btn.textContent = '💳 Spróbuj ponownie';
-                btn.className = 'bg-red-600 text-white px-6 py-2 rounded-md hover:bg-red-700 transition-colors';
+                btn.textContent = '💳 Połącz konto 1';
+                btn.className = 'bg-purple-600 text-white px-5 py-2 rounded-md hover:bg-purple-700 transition-colors text-sm';
             }
         });
 
-        // Stripe API Refresh button handler
         document.getElementById('refreshStripeApiBtn').addEventListener('click', async function() {
             const btn = this;
-            const originalText = btn.textContent;
             btn.disabled = true;
             btn.textContent = 'Odświeżanie...';
-            
-            await fetchFromStripeApi();
-            
+            await fetchStripeAccount(1);
             btn.disabled = false;
-            btn.textContent = originalText;
+            btn.textContent = '🔄 Odśwież';
+        });
+
+        document.getElementById('connectStripeApi2Btn').addEventListener('click', async function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Łączenie...';
+            btn.className = 'bg-gray-400 text-white px-5 py-2 rounded-md cursor-not-allowed text-sm';
+            const success = await fetchStripeAccount(2);
+            if (success) {
+                btn.textContent = '✓ Konto 2 połączone';
+                btn.className = 'bg-green-600 text-white px-5 py-2 rounded-md text-sm';
+            } else {
+                btn.disabled = false;
+                btn.textContent = '💳 Połącz konto 2';
+                btn.className = 'bg-indigo-600 text-white px-5 py-2 rounded-md hover:bg-indigo-700 transition-colors text-sm';
+            }
+        });
+
+        document.getElementById('refreshStripeApi2Btn').addEventListener('click', async function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Odświeżanie...';
+            await fetchStripeAccount(2);
+            btn.disabled = false;
+            btn.textContent = '🔄 Odśwież';
         });
 
         // Save Stripe API URL to localStorage
@@ -772,6 +856,7 @@
                         payoutId: '',
                         hasPayout: 'no',
                         payoutDate: '',
+                        stripeAccount: '',
                         paymentId: '',
                         eventId: event['Event Id'] || '',
                         registrationId: event.ID || ''
@@ -803,6 +888,7 @@
                             payoutId: payoutId,
                             hasPayout: payoutId ? 'yes' : 'no',
                             payoutDate: payoutDate,
+                            stripeAccount: payment['_stripeAccount'] || 'Konto 1',
                             paymentId: paymentId,
                             eventId: event['Event Id'] || '',
                             registrationId: event.ID || ''
@@ -823,6 +909,7 @@
                             payoutId: '',
                             hasPayout: 'no',
                             payoutDate: '',
+                            stripeAccount: '',
                             paymentId: paymentId,
                             eventId: event['Event Id'] || '',
                             registrationId: event.ID || ''
@@ -1068,6 +1155,7 @@
             const statusFilter = document.getElementById('statusFilter').value;
             const payoutFilter = document.getElementById('payoutFilter').value;
             const payoutDateFilter = document.getElementById('payoutDateFilter').value;
+            const stripeAccountFilter = document.getElementById('stripeAccountFilter').value;
             const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
 
             filteredData = mergedData.filter(row => {
@@ -1076,6 +1164,7 @@
                 if (payoutFilter && row.hasPayout !== payoutFilter) return false;
                 if (payoutDateFilter === '__none__' && row.payoutDate) return false;
                 if (payoutDateFilter && payoutDateFilter !== '__none__' && row.payoutDate !== payoutDateFilter) return false;
+                if (stripeAccountFilter && row.stripeAccount !== stripeAccountFilter) return false;
                 if (searchFilter && !row.email.toLowerCase().includes(searchFilter) && 
                     !row.fullName.toLowerCase().includes(searchFilter)) return false;
                 return true;
@@ -1145,6 +1234,11 @@
                     <td class="px-4 py-3 text-sm text-gray-900">
                         ${row.payoutDate ? formatDate(row.payoutDate) : (row.hasPayout === 'yes' ? '<span class="text-gray-400 text-xs">brak daty</span>' : '-')}
                     </td>
+                    <td class="px-4 py-3 text-sm text-center">
+                        ${row.stripeAccount === 'Konto 2'
+                            ? '<span class="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-semibold">Konto 2</span>'
+                            : (row.stripeAccount ? '<span class="px-2 py-0.5 bg-purple-100 text-purple-700 rounded-full text-xs font-semibold">Konto 1</span>' : '<span class="text-gray-300 text-xs">—</span>')}
+                    </td>
                     <td class="px-4 py-3 text-sm text-gray-600 font-mono text-xs">${row.paymentId}</td>
                 `;
                 tbody.appendChild(tr);
@@ -1178,6 +1272,7 @@
 
         // Filter event listeners
         document.getElementById('statusFilter').addEventListener('change', applyFilters);
+        document.getElementById('stripeAccountFilter').addEventListener('change', applyFilters);
         document.getElementById('payoutFilter').addEventListener('change', applyFilters);
         document.getElementById('payoutDateFilter').addEventListener('change', applyFilters);
         document.getElementById('searchFilter').addEventListener('input', applyFilters);
@@ -1190,6 +1285,7 @@
             document.getElementById('statusFilter').value = '';
             document.getElementById('payoutFilter').value = '';
             document.getElementById('payoutDateFilter').value = '';
+            document.getElementById('stripeAccountFilter').value = '';
             document.getElementById('searchFilter').value = '';
             applyFilters();
         });
@@ -1223,6 +1319,7 @@
                 'Status płatności': formatStatus(row.status),
                 'Wypłacone': row.hasPayout === 'yes' ? 'Tak' : 'Nie',
                 'Data wypłacenia': row.payoutDate || '',
+                'Konto Stripe': row.stripeAccount || '',
                 'Payout ID': row.payoutId,
                 'Payment ID': row.paymentId,
                 'Event ID': row.eventId,

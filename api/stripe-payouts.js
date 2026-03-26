@@ -15,10 +15,12 @@ module.exports = async (req, res) => {
         return res.status(405).json({ error: 'Method not allowed' });
     }
 
-    // Check for API key
-    const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+    // Support multiple Stripe accounts via ?account=1|2
+    const account = req.query.account || '1';
+    const keyName = account === '2' ? 'STRIPE_SECRET_KEY_2' : 'STRIPE_SECRET_KEY';
+    const stripeSecretKey = process.env[keyName];
     if (!stripeSecretKey) {
-        return res.status(500).json({ error: 'STRIPE_SECRET_KEY not configured' });
+        return res.status(500).json({ error: `${keyName} not configured` });
     }
 
     const stripe = new Stripe(stripeSecretKey);
