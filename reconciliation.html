@@ -365,23 +365,26 @@
                 const baseUrl = getStripeApiBaseUrl();
                 const days = document.getElementById('stripeDaysRange').value;
                 
-                updateStripeApiStatus('⏳ Pobieranie danych ze Stripe API...', 'text-purple-600');
+                updateStripeApiStatus('⏳ Pobieranie płatności ze Stripe API...', 'text-purple-600');
                 updateStripeConnectionInfo('Łączenie z API...');
+
+                // Fetch payments and payouts in parallel
+                const [paymentsResponse, payoutsResponse] = await Promise.all([
+                    fetch(`${baseUrl}/api/stripe-unified?days=${days}&limit=500`),
+                    fetch(`${baseUrl}/api/stripe-payouts?limit=100`)
+                ]);
                 
-                const response = await fetch(`${baseUrl}/api/stripe-unified?days=${days}&limit=500`);
-                
-                if (!response.ok) {
-                    const error = await response.json();
-                    throw new Error(error.message || `HTTP ${response.status}`);
+                if (!paymentsResponse.ok) {
+                    const error = await paymentsResponse.json();
+                    throw new Error(error.message || `HTTP ${paymentsResponse.status}`);
                 }
                 
-                const result = await response.json();
-                
+                const result = await paymentsResponse.json();
                 if (!result.success) {
                     throw new Error(result.error || 'Unknown error');
                 }
-                
-                // Transform API data to match CSV format expected by mergeData()
+
+                // Transform payments to match CSV format expected by mergeData()
                 paymentsData = result.data.map(payment => ({
                     'id': payment.id,
                     'PaymentIntent ID': payment['PaymentIntent ID'],
@@ -403,27 +406,47 @@
                     'Payment Source Type': payment['Payment Source Type'],
                     'Description': payment.Description
                 }));
+
+                // Build payoutDateMap from payouts API
+                let payoutsCount = 0;
+                if (payoutsResponse.ok) {
+                    try {
+                        const payoutsResult = await payoutsResponse.json();
+                        if (payoutsResult.success && payoutsResult.data) {
+                            payoutsData = payoutsResult.data;
+                            payoutDateMap = {};
+                            payoutsResult.data.forEach(payout => {
+                                if (payout.id && payout.id.startsWith('po_') && payout.arrival_date) {
+                                    payoutDateMap[payout.id] = payout.arrival_date;
+                                }
+                            });
+                            payoutsCount = Object.keys(payoutDateMap).length;
+                            document.getElementById('payoutsStatus').textContent =
+                                `✓ ${payoutsCount} wypłat pobranych ze Stripe API`;
+                            document.getElementById('payoutsStatus').className = 'mt-2 text-sm text-green-600';
+                        }
+                    } catch (e) {
+                        console.warn('Could not fetch payouts:', e);
+                    }
+                }
                 
                 const timestamp = new Date().toLocaleTimeString('pl-PL');
                 updateStripeApiStatus(
-                    `✅ Pobrano ${paymentsData.length} płatności (${timestamp})`, 
+                    `✅ Pobrano ${paymentsData.length} płatności + ${payoutsCount} wypłat (${timestamp})`, 
                     'text-green-600 font-semibold'
                 );
                 updateStripeConnectionInfo(
-                    `Połączono! ${result.count} transakcji z okresu ${result.date_range.from} - ${result.date_range.to}`
+                    `Połączono! ${result.count} transakcji z okresu ${result.date_range.from} - ${result.date_range.to} · ${payoutsCount} wypłat z datami`
                 );
                 
-                // Update payments status in the file upload section
                 document.getElementById('paymentsStatus').textContent = 
-                    `✓ Załadowano ${paymentsData.length} płatności ze Stripe API`;
+                    `✓ ${paymentsData.length} płatności ze Stripe API`;
                 document.getElementById('paymentsStatus').className = 'mt-2 text-sm text-green-600';
                 
                 stripeApiConnected = true;
                 document.getElementById('refreshStripeApiBtn').disabled = false;
                 
-                // Enable process button if we also have events data
                 checkReady();
-                
                 return true;
             } catch (error) {
                 console.error('Stripe API Error:', error);
