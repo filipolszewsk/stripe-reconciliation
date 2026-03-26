@@ -62,6 +62,7 @@
                     class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
                 Przetworz dane
             </button>
+            <div id="mergeStats" class="hidden mt-3 text-sm bg-blue-50 border border-blue-200 rounded-md px-4 py-2 leading-relaxed"></div>
         </div>
 
         <!-- Firestore Connection Section -->
@@ -583,6 +584,7 @@
                         if (mergedData.length > 0) {
                             mergeData();
                             populatePayoutDateFilter();
+                            updateSummary();
                             applyFilters();
                         }
                     }
@@ -722,18 +724,23 @@
         // Merge data logic
         function mergeData() {
             mergedData = [];
-            
+
+            let statsNoPaymentId = 0;
+            let statsMatched = 0;
+            let statsNotFound = 0;
+            let statsWithPayoutDate = 0;
+
             eventsData.forEach(event => {
                 const paymentId = event.payment_id;
                 
                 if (!paymentId) {
-                    // Transaction without payment_id (pending/unpaid)
+                    statsNoPaymentId++;
                     mergedData.push({
                         event: event._name || '',
                         email: event.Email || '',
-                        firstName: extractField(event.Data, 'firstname'),
-                        lastName: extractField(event.Data, 'lastname'),
-                        fullName: `${extractField(event.Data, 'firstname')} ${extractField(event.Data, 'lastname')}`,
+                        firstName: event['First Name'] || extractField(event.Data, 'firstname'),
+                        lastName: event['Family Name'] || extractField(event.Data, 'lastname'),
+                        fullName: `${event['First Name'] || extractField(event.Data, 'firstname')} ${event['Family Name'] || extractField(event.Data, 'lastname')}`,
                         paymentDate: event.payment_date || '',
                         amount: '',
                         fee: '',
@@ -747,17 +754,24 @@
                         registrationId: event.ID || ''
                     });
                 } else {
-                    // Find matching payment in Stripe data
-                    const payment = paymentsData.find(p => p['PaymentIntent ID'] === paymentId || p.id === paymentId);
+                    const payment = paymentsData.find(p =>
+                        p['PaymentIntent ID'] === paymentId ||
+                        p.id === paymentId ||
+                        p['PaymentIntent ID'] === paymentId.trim() ||
+                        p.id === paymentId.trim()
+                    );
                     
                     if (payment) {
+                        statsMatched++;
                         const payoutId = findPayoutId(payment);
+                        const payoutDate = payoutId ? (payoutDateMap[payoutId] || '') : '';
+                        if (payoutDate) statsWithPayoutDate++;
                         mergedData.push({
                             event: event._name || '',
                             email: event.Email || '',
-                            firstName: extractField(event.Data, 'firstname'),
-                            lastName: extractField(event.Data, 'lastname'),
-                            fullName: `${extractField(event.Data, 'firstname')} ${extractField(event.Data, 'lastname')}`,
+                            firstName: event['First Name'] || extractField(event.Data, 'firstname'),
+                            lastName: event['Family Name'] || extractField(event.Data, 'lastname'),
+                            fullName: `${event['First Name'] || extractField(event.Data, 'firstname')} ${event['Family Name'] || extractField(event.Data, 'lastname')}`,
                             paymentDate: payment['Created date (UTC)'] || payment.Created || event.payment_date || '',
                             amount: parseFloat(payment.Net || payment['Converted Amount'] || 0),
                             fee: parseFloat(payment.Fee || payment.Fees || 0),
@@ -765,19 +779,19 @@
                             status: normalizeStatus(payment.Status),
                             payoutId: payoutId,
                             hasPayout: payoutId ? 'yes' : 'no',
-                            payoutDate: payoutId ? (payoutDateMap[payoutId] || '') : '',
+                            payoutDate: payoutDate,
                             paymentId: paymentId,
                             eventId: event['Event Id'] || '',
                             registrationId: event.ID || ''
                         });
                     } else {
-                        // Payment ID exists but not found in Stripe data
+                        statsNotFound++;
                         mergedData.push({
                             event: event._name || '',
                             email: event.Email || '',
-                            firstName: extractField(event.Data, 'firstname'),
-                            lastName: extractField(event.Data, 'lastname'),
-                            fullName: `${extractField(event.Data, 'firstname')} ${extractField(event.Data, 'lastname')}`,
+                            firstName: event['First Name'] || extractField(event.Data, 'firstname'),
+                            lastName: event['Family Name'] || extractField(event.Data, 'lastname'),
+                            fullName: `${event['First Name'] || extractField(event.Data, 'firstname')} ${event['Family Name'] || extractField(event.Data, 'lastname')}`,
                             paymentDate: event.payment_date || '',
                             amount: '',
                             fee: '',
@@ -793,6 +807,25 @@
                     }
                 }
             });
+
+            // Show diagnostics
+            const payoutMapSize = Object.keys(payoutDateMap).length;
+            const uniqueDates = [...new Set(mergedData.map(d => d.payoutDate).filter(d => d))];
+            const el = document.getElementById('mergeStats');
+            if (el) {
+                const problems = [];
+                if (statsNoPaymentId > 0) problems.push(`<span class="text-amber-700">${statsNoPaymentId} rejestracji bez payment_id</span>`);
+                if (statsNotFound > 0) problems.push(`<span class="text-red-700">${statsNotFound} payment_id nie znaleziono w CSV Stripe</span>`);
+                if (payoutMapSize === 0 && statsMatched > 0) problems.push(`<span class="text-red-700">Brak załadowanego pliku Payouts CSV</span>`);
+
+                el.innerHTML = `
+                    <span class="text-gray-600">Dopasowano <strong>${statsMatched}</strong> z <strong>${eventsData.length}</strong> rejestracji do Stripe CSV</span>
+                    ${payoutMapSize > 0 ? `&nbsp;·&nbsp;<span class="text-green-700">${payoutMapSize} wypłat w mapie dat</span>` : `&nbsp;·&nbsp;<span class="text-amber-600">Payouts CSV niezaładowany</span>`}
+                    &nbsp;·&nbsp;<span class="text-blue-700">${uniqueDates.length} unikalnych dat wypłat</span>
+                    ${problems.length > 0 ? '<br><span class="text-xs">' + problems.join(' · ') + '</span>' : ''}
+                `;
+                el.classList.remove('hidden');
+            }
         }
 
         // Extract field from JSON string
