@@ -15,6 +15,9 @@
         .status-failed { background-color: #fee2e2; }
         .payout-yes { color: #059669; font-weight: 600; }
         .payout-no { color: #d97706; font-weight: 600; }
+        .event-checkbox-item { display: flex; align-items: center; padding: 6px 10px; cursor: pointer; }
+        .event-checkbox-item:hover { background-color: #f0f9ff; }
+        .event-checkbox-item input[type=checkbox] { margin-right: 8px; cursor: pointer; accent-color: #2563eb; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -45,6 +48,15 @@
                            class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                     <p id="paymentsStatus" class="mt-2 text-sm text-gray-500"></p>
                 </div>
+            </div>
+            <div class="mt-4 border-t pt-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">
+                    Payouts CSV (Stripe) <span class="text-gray-400 font-normal">– opcjonalny, dodaje daty wypłat</span>
+                </label>
+                <p class="text-xs text-gray-500 mb-2">Pobierz z: Stripe Dashboard → Raporty → Płatności → Wypłaty → Eksportuj CSV</p>
+                <input type="file" id="payoutsFile" accept=".csv" 
+                       class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100">
+                <p id="payoutsStatus" class="mt-2 text-sm text-gray-500"></p>
             </div>
             <button id="processBtn" disabled 
                     class="mt-4 bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed">
@@ -158,30 +170,30 @@
                 </h3>
                 <div class="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div class="bg-gradient-to-br from-green-50 to-green-100 p-4 rounded-lg border border-green-200">
-                        <p class="text-xs text-gray-600 mb-1">✅ Przychód netto</p>
+                        <p class="text-xs text-gray-600 mb-1">✅ Łącznie po prowizjach</p>
                         <p id="eventTotalRevenue" class="text-2xl font-bold text-green-700">0 PLN</p>
                         <p class="text-xs text-gray-500 mt-1"><span id="eventTotalCount">0</span> transakcji</p>
-                        <p class="text-xs text-gray-400 mt-0.5 italic">= przychód - prowizja</p>
+                        <p class="text-xs text-gray-400 mt-0.5 italic">= wpłaty − prowizje Stripe</p>
                     </div>
                     <div class="bg-gradient-to-br from-red-50 to-red-100 p-4 rounded-lg border border-red-200">
                         <p class="text-xs text-gray-600 mb-1">💸 Prowizje Stripe</p>
                         <p id="eventTotalFees" class="text-2xl font-bold text-red-700">0 PLN</p>
-                        <p class="text-xs text-gray-500 mt-1">koszt transakcji</p>
+                        <p class="text-xs text-gray-500 mt-1">łączny koszt transakcji</p>
                     </div>
                     <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 p-4 rounded-lg border border-emerald-200">
                         <p class="text-xs text-gray-600 mb-1">💰 Wypłacone na konto</p>
                         <p id="eventPaidOutRevenue" class="text-2xl font-bold text-emerald-700">0 PLN</p>
                         <p class="text-xs text-gray-500 mt-1"><span id="eventPaidOutCount">0</span> transakcji</p>
-                        <p class="text-xs text-red-600 mt-0.5">minus <span id="eventPaidOutFees">0</span> PLN prowizji</p>
+                        <p class="text-xs text-gray-400 mt-0.5 italic">po odjęciu <span id="eventPaidOutFees">0</span> PLN prowizji</p>
                     </div>
                     <div class="bg-gradient-to-br from-amber-50 to-amber-100 p-4 rounded-lg border border-amber-200">
                         <p class="text-xs text-gray-600 mb-1">⏳ Oczekujące wypłaty</p>
                         <p id="eventPendingRevenue" class="text-2xl font-bold text-amber-700">0 PLN</p>
                         <p class="text-xs text-gray-500 mt-1"><span id="eventPendingCount">0</span> transakcji</p>
-                        <p class="text-xs text-red-600 mt-0.5">minus <span id="eventPendingFees">0</span> PLN prowizji</p>
+                        <p class="text-xs text-gray-400 mt-0.5 italic">po odjęciu <span id="eventPendingFees">0</span> PLN prowizji</p>
                     </div>
                     <div class="bg-gradient-to-br from-gray-50 to-gray-100 p-4 rounded-lg border border-gray-200">
-                        <p class="text-xs text-gray-600 mb-1">Średnia wartość (netto)</p>
+                        <p class="text-xs text-gray-600 mb-1">Średnia po prowizjach</p>
                         <p id="eventAverageRevenue" class="text-2xl font-bold text-gray-700">0 PLN</p>
                         <p class="text-xs text-gray-500 mt-1">na transakcję</p>
                     </div>
@@ -192,12 +204,24 @@
         <!-- Filters Section -->
         <div id="filtersSection" class="hidden bg-white rounded-lg shadow-md p-6 mb-6">
             <h2 class="text-xl font-semibold mb-4">3. Filtry</h2>
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4">
+                <div class="relative" id="eventFilterWrapper">
                     <label class="block text-sm font-medium text-gray-700 mb-2">Event</label>
-                    <select id="eventFilter" class="w-full border border-gray-300 rounded-md px-3 py-2">
-                        <option value="">Wszystkie</option>
-                    </select>
+                    <button type="button" id="eventFilterBtn"
+                            class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm bg-white text-left flex items-center justify-between hover:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-300">
+                        <span id="eventFilterLabel" class="text-gray-500 truncate">Wszystkie eventy</span>
+                        <svg class="w-4 h-4 text-gray-400 flex-shrink-0 ml-1 transition-transform" id="eventFilterArrow" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/>
+                        </svg>
+                    </button>
+                    <div id="eventFilterDropdown" class="hidden absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-md shadow-lg">
+                        <div class="p-2 border-b flex gap-2">
+                            <button type="button" id="selectAllEvents" class="text-xs text-blue-600 hover:underline">Zaznacz wszystkie</button>
+                            <span class="text-gray-300">|</span>
+                            <button type="button" id="deselectAllEvents" class="text-xs text-blue-600 hover:underline">Odznacz wszystkie</button>
+                        </div>
+                        <div id="eventFilterList" class="max-h-56 overflow-y-auto py-1"></div>
+                    </div>
                 </div>
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Status płatności</label>
@@ -214,6 +238,12 @@
                         <option value="">Wszystkie</option>
                         <option value="yes">Wypłacone</option>
                         <option value="no">Oczekujące</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Data wypłacenia</label>
+                    <select id="payoutDateFilter" class="w-full border border-gray-300 rounded-md px-3 py-2">
+                        <option value="">Wszystkie</option>
                     </select>
                 </div>
                 <div>
@@ -263,6 +293,9 @@
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="payout">
                                 Wypłacone ↕
                             </th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider cursor-pointer hover:bg-gray-100" data-sort="payoutDate">
+                                Data wypłacenia ↕
+                            </th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                                 Payment ID
                             </th>
@@ -292,6 +325,8 @@
 
         let eventsData = [];
         let paymentsData = [];
+        let payoutsData = [];
+        let payoutDateMap = {};
         let mergedData = [];
         let filteredData = [];
         let sortColumn = null;
@@ -533,6 +568,39 @@
             }
         });
 
+        document.getElementById('payoutsFile').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                Papa.parse(file, {
+                    header: true,
+                    complete: function(results) {
+                        payoutsData = results.data;
+                        buildPayoutDateMap();
+                        const uniqueDates = Object.values(payoutDateMap).filter((v, i, a) => a.indexOf(v) === i);
+                        document.getElementById('payoutsStatus').textContent = 
+                            `✓ Załadowano ${payoutsData.length} wypłat (${Object.keys(payoutDateMap).length} z datami)`;
+                        document.getElementById('payoutsStatus').className = 'mt-2 text-sm text-green-600';
+                        if (mergedData.length > 0) {
+                            mergeData();
+                            populatePayoutDateFilter();
+                            applyFilters();
+                        }
+                    }
+                });
+            }
+        });
+
+        function buildPayoutDateMap() {
+            payoutDateMap = {};
+            payoutsData.forEach(row => {
+                const id = row['id'] || row['ID'] || row['payout_id'] || '';
+                if (!id.startsWith('po_')) return;
+                const dateVal = row['Arrival Date (UTC)'] || row['arrival_date'] || row['Arrival Date']
+                    || row['Date'] || row['Created (UTC)'] || row['Created date (UTC)'] || '';
+                if (dateVal) payoutDateMap[id] = dateVal;
+            });
+        }
+
         function checkReady() {
             // Enable if we have events data (from CSV or Firestore) AND payments data
             if (eventsData.length > 0 && paymentsData.length > 0) {
@@ -643,6 +711,7 @@
         document.getElementById('processBtn').addEventListener('click', function() {
             mergeData();
             populateEventFilter();
+            populatePayoutDateFilter();
             updateSummary();
             applyFilters();
             document.getElementById('summarySection').classList.remove('hidden');
@@ -672,6 +741,7 @@
                         status: event['Payment Status'] || 'pending',
                         payoutId: '',
                         hasPayout: 'no',
+                        payoutDate: '',
                         paymentId: '',
                         eventId: event['Event Id'] || '',
                         registrationId: event.ID || ''
@@ -695,6 +765,7 @@
                             status: normalizeStatus(payment.Status),
                             payoutId: payoutId,
                             hasPayout: payoutId ? 'yes' : 'no',
+                            payoutDate: payoutId ? (payoutDateMap[payoutId] || '') : '',
                             paymentId: paymentId,
                             eventId: event['Event Id'] || '',
                             registrationId: event.ID || ''
@@ -714,6 +785,7 @@
                             status: 'pending',
                             payoutId: '',
                             hasPayout: 'no',
+                            payoutDate: '',
                             paymentId: paymentId,
                             eventId: event['Event Id'] || '',
                             registrationId: event.ID || ''
@@ -760,14 +832,96 @@
             return 'pending';
         }
 
-        // Populate event filter
+        let selectedEvents = new Set();
+
         function populateEventFilter() {
-            const events = [...new Set(mergedData.map(d => d.event))].filter(e => e);
-            const select = document.getElementById('eventFilter');
+            const events = [...new Set(mergedData.map(d => d.event))].filter(e => e).sort();
+            selectedEvents = new Set();
+            const list = document.getElementById('eventFilterList');
+            list.innerHTML = '';
             events.forEach(event => {
+                const label = document.createElement('label');
+                label.className = 'event-checkbox-item';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.value = event;
+                cb.addEventListener('change', () => {
+                    if (cb.checked) selectedEvents.add(event);
+                    else selectedEvents.delete(event);
+                    updateEventFilterLabel();
+                    applyFilters();
+                });
+                label.appendChild(cb);
+                label.appendChild(document.createTextNode(event));
+                list.appendChild(label);
+            });
+            updateEventFilterLabel();
+        }
+
+        function updateEventFilterLabel() {
+            const label = document.getElementById('eventFilterLabel');
+            if (selectedEvents.size === 0) {
+                label.textContent = 'Wszystkie eventy';
+                label.className = 'text-gray-500 truncate';
+            } else if (selectedEvents.size === 1) {
+                label.textContent = [...selectedEvents][0];
+                label.className = 'text-gray-800 truncate font-medium';
+            } else {
+                label.textContent = `${selectedEvents.size} eventy wybrane`;
+                label.className = 'text-blue-700 truncate font-medium';
+            }
+        }
+
+        // Toggle dropdown open/close
+        document.getElementById('eventFilterBtn').addEventListener('click', function(e) {
+            e.stopPropagation();
+            const dropdown = document.getElementById('eventFilterDropdown');
+            const arrow = document.getElementById('eventFilterArrow');
+            dropdown.classList.toggle('hidden');
+            arrow.style.transform = dropdown.classList.contains('hidden') ? '' : 'rotate(180deg)';
+        });
+
+        // Close dropdown on outside click
+        document.addEventListener('click', function(e) {
+            const wrapper = document.getElementById('eventFilterWrapper');
+            if (!wrapper.contains(e.target)) {
+                document.getElementById('eventFilterDropdown').classList.add('hidden');
+                document.getElementById('eventFilterArrow').style.transform = '';
+            }
+        });
+
+        document.getElementById('selectAllEvents').addEventListener('click', function() {
+            document.querySelectorAll('#eventFilterList input[type=checkbox]').forEach(cb => {
+                cb.checked = true;
+                selectedEvents.add(cb.value);
+            });
+            updateEventFilterLabel();
+            applyFilters();
+        });
+
+        document.getElementById('deselectAllEvents').addEventListener('click', function() {
+            document.querySelectorAll('#eventFilterList input[type=checkbox]').forEach(cb => {
+                cb.checked = false;
+            });
+            selectedEvents.clear();
+            updateEventFilterLabel();
+            applyFilters();
+        });
+
+        function populatePayoutDateFilter() {
+            const dates = [...new Set(mergedData.map(d => d.payoutDate))].filter(d => d).sort();
+            const select = document.getElementById('payoutDateFilter');
+            select.innerHTML = '<option value="">Wszystkie</option>';
+            if (dates.length > 0) {
+                const noneOption = document.createElement('option');
+                noneOption.value = '__none__';
+                noneOption.textContent = 'Brak daty wypłaty';
+                select.appendChild(noneOption);
+            }
+            dates.forEach(date => {
                 const option = document.createElement('option');
-                option.value = event;
-                option.textContent = event;
+                option.value = date;
+                option.textContent = formatDate(date);
                 select.appendChild(option);
             });
         }
@@ -787,87 +941,85 @@
 
         // Update event financial summary
         function updateEventFinancialSummary() {
-            const eventFilter = document.getElementById('eventFilter').value;
             const eventFinancialSection = document.getElementById('eventFinancialSection');
             
-            if (eventFilter && filteredData.length > 0) {
-                // Show the section
-                eventFinancialSection.classList.remove('hidden');
-                
-                // Update event name
-                document.getElementById('selectedEventName').textContent = eventFilter;
-                
-                // Calculate totals
-                let totalRevenue = 0;
-                let paidOutRevenue = 0;
-                let pendingRevenue = 0;
-                let totalFees = 0;
-                let paidOutFees = 0;
-                let pendingFees = 0;
-                let paidOutCount = 0;
-                let pendingCount = 0;
-                
-                filteredData.forEach(row => {
-                    const amount = parseFloat(row.amount) || 0;
-                    const fee = parseFloat(row.fee) || 0;
-                    
-                    totalRevenue += amount;
-                    totalFees += fee;
-                    
-                    if (row.hasPayout === 'yes') {
-                        // Już wypłacone przez Stripe
-                        paidOutRevenue += amount;
-                        paidOutFees += fee;
-                        paidOutCount++;
-                    } else {
-                        // Wszystko co nie jest wypłacone = oczekujące
-                        pendingRevenue += amount;
-                        pendingFees += fee;
-                        pendingCount++;
-                    }
-                });
-                
-                const average = filteredData.length > 0 ? totalRevenue / filteredData.length : 0;
-                
-                // Update UI
-                document.getElementById('eventTotalRevenue').textContent = 
-                    totalRevenue.toFixed(2) + ' PLN';
-                document.getElementById('eventTotalCount').textContent = filteredData.length;
-                
-                document.getElementById('eventTotalFees').textContent = 
-                    totalFees.toFixed(2) + ' PLN';
-                
-                document.getElementById('eventPaidOutRevenue').textContent = 
-                    paidOutRevenue.toFixed(2) + ' PLN';
-                document.getElementById('eventPaidOutCount').textContent = paidOutCount;
-                document.getElementById('eventPaidOutFees').textContent = 
-                    paidOutFees.toFixed(2);
-                
-                document.getElementById('eventPendingRevenue').textContent = 
-                    pendingRevenue.toFixed(2) + ' PLN';
-                document.getElementById('eventPendingCount').textContent = pendingCount;
-                document.getElementById('eventPendingFees').textContent = 
-                    pendingFees.toFixed(2);
-                
-                document.getElementById('eventAverageRevenue').textContent = 
-                    average.toFixed(2) + ' PLN';
-            } else {
-                // Hide the section if no event filter
+            if (filteredData.length === 0) {
                 eventFinancialSection.classList.add('hidden');
+                return;
             }
+
+            eventFinancialSection.classList.remove('hidden');
+
+            // Update title
+            if (selectedEvents.size === 0) {
+                document.getElementById('selectedEventName').textContent = 'wszystkie eventy';
+            } else if (selectedEvents.size === 1) {
+                document.getElementById('selectedEventName').textContent = [...selectedEvents][0];
+            } else {
+                document.getElementById('selectedEventName').textContent = `${selectedEvents.size} wybrane eventy`;
+            }
+
+            // Calculate totals (gross amounts from Stripe)
+            let totalGross = 0;
+            let paidOutGross = 0;
+            let pendingGross = 0;
+            let totalFees = 0;
+            let paidOutFees = 0;
+            let pendingFees = 0;
+            let paidOutCount = 0;
+            let pendingCount = 0;
+
+            filteredData.forEach(row => {
+                const amount = parseFloat(row.amount) || 0;
+                const fee = parseFloat(row.fee) || 0;
+
+                totalGross += amount;
+                totalFees += fee;
+
+                if (row.hasPayout === 'yes') {
+                    paidOutGross += amount;
+                    paidOutFees += fee;
+                    paidOutCount++;
+                } else {
+                    pendingGross += amount;
+                    pendingFees += fee;
+                    pendingCount++;
+                }
+            });
+
+            const totalNet = totalGross - totalFees;
+            const paidOutNet = paidOutGross - paidOutFees;
+            const pendingNet = pendingGross - pendingFees;
+            const averageNet = filteredData.length > 0 ? totalNet / filteredData.length : 0;
+
+            document.getElementById('eventTotalRevenue').textContent = totalNet.toFixed(2) + ' PLN';
+            document.getElementById('eventTotalCount').textContent = filteredData.length;
+            document.getElementById('eventTotalFees').textContent = totalFees.toFixed(2) + ' PLN';
+
+            document.getElementById('eventPaidOutRevenue').textContent = paidOutNet.toFixed(2) + ' PLN';
+            document.getElementById('eventPaidOutCount').textContent = paidOutCount;
+            document.getElementById('eventPaidOutFees').textContent = paidOutFees.toFixed(2);
+
+            document.getElementById('eventPendingRevenue').textContent = pendingNet.toFixed(2) + ' PLN';
+            document.getElementById('eventPendingCount').textContent = pendingCount;
+            document.getElementById('eventPendingFees').textContent = pendingFees.toFixed(2);
+
+            document.getElementById('eventAverageRevenue').textContent = averageNet.toFixed(2) + ' PLN';
         }
 
         // Apply filters
         function applyFilters() {
-            const eventFilter = document.getElementById('eventFilter').value.toLowerCase();
             const statusFilter = document.getElementById('statusFilter').value;
             const payoutFilter = document.getElementById('payoutFilter').value;
+            const payoutDateFilter = document.getElementById('payoutDateFilter').value;
             const searchFilter = document.getElementById('searchFilter').value.toLowerCase();
 
             filteredData = mergedData.filter(row => {
-                if (eventFilter && row.event.toLowerCase() !== eventFilter) return false;
+                if (selectedEvents.size > 0 && !selectedEvents.has(row.event)) return false;
                 if (statusFilter && row.status !== statusFilter) return false;
                 if (payoutFilter && row.hasPayout !== payoutFilter) return false;
+                if (payoutDateFilter === '__none__' && row.payoutDate) return false;
+                if (payoutDateFilter && payoutDateFilter !== '__none__' && row.payoutDate !== payoutDateFilter) return false;
                 if (searchFilter && !row.email.toLowerCase().includes(searchFilter) && 
                     !row.fullName.toLowerCase().includes(searchFilter)) return false;
                 return true;
@@ -902,7 +1054,7 @@
                     }
                     
                     // Special handling for date - parse as Date object
-                    if (sortColumn === 'paymentDate' || sortColumn === 'date') {
+                    if (sortColumn === 'paymentDate' || sortColumn === 'date' || sortColumn === 'payoutDate') {
                         aVal = aVal ? new Date(aVal).getTime() : 0;
                         bVal = bVal ? new Date(bVal).getTime() : 0;
                     }
@@ -933,6 +1085,9 @@
                     <td class="px-4 py-3 text-sm text-gray-900">${formatStatus(row.status)}</td>
                     <td class="px-4 py-3 text-sm ${row.hasPayout === 'yes' ? 'payout-yes' : 'payout-no'}">
                         ${row.hasPayout === 'yes' ? 'Tak' : 'Nie'}
+                    </td>
+                    <td class="px-4 py-3 text-sm text-gray-900">
+                        ${row.payoutDate ? formatDate(row.payoutDate) : (row.hasPayout === 'yes' ? '<span class="text-gray-400 text-xs">brak daty</span>' : '-')}
                     </td>
                     <td class="px-4 py-3 text-sm text-gray-600 font-mono text-xs">${row.paymentId}</td>
                 `;
@@ -966,16 +1121,19 @@
         }
 
         // Filter event listeners
-        document.getElementById('eventFilter').addEventListener('change', applyFilters);
         document.getElementById('statusFilter').addEventListener('change', applyFilters);
         document.getElementById('payoutFilter').addEventListener('change', applyFilters);
+        document.getElementById('payoutDateFilter').addEventListener('change', applyFilters);
         document.getElementById('searchFilter').addEventListener('input', applyFilters);
 
         // Clear filters
         document.getElementById('clearFiltersBtn').addEventListener('click', function() {
-            document.getElementById('eventFilter').value = '';
+            document.querySelectorAll('#eventFilterList input[type=checkbox]').forEach(cb => cb.checked = false);
+            selectedEvents.clear();
+            updateEventFilterLabel();
             document.getElementById('statusFilter').value = '';
             document.getElementById('payoutFilter').value = '';
+            document.getElementById('payoutDateFilter').value = '';
             document.getElementById('searchFilter').value = '';
             applyFilters();
         });
@@ -1007,6 +1165,7 @@
                 'Waluta': row.currency,
                 'Status płatności': formatStatus(row.status),
                 'Wypłacone': row.hasPayout === 'yes' ? 'Tak' : 'Nie',
+                'Data wypłacenia': row.payoutDate || '',
                 'Payout ID': row.payoutId,
                 'Payment ID': row.paymentId,
                 'Event ID': row.eventId,
